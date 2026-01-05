@@ -3,22 +3,41 @@
 import { Box, Divider, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
 import Sidebar from "@/src/components/Sidebar";
 import CompanyTable from "@/src/template/table/companytable";
-import { useMemo, useState } from "react";
-import companies from "@/public/company.json";
+import { useMemo, useState, useEffect } from "react";
 
-const levelOptions = ["All", "Level 1", "Level 2", "Level 3"];
+interface Company {
+  company_code: string;
+  company_name: string;
+  level: string;
+  country: string;
+  city: string;
+  founded_year: number;
+  annual_revenue: number;
+  employees: number;
+}
+
+const levelOptions = ["All", "Level 1", "Level 2", "Level 3", "Level 4"];
 
 export default function CompanyPage() {
   const [activeLevel, setActiveLevel] = useState("All");
+  const [companies, setCompanies] = useState<Company[]>([]);
+
+  // Fetch companies from JSON (simulating backend API)
+  useEffect(() => {
+    fetch("/companies.json")
+      .then((res) => res.json())
+      .then((data) => setCompanies(data))
+      .catch(console.error);
+  }, []);
 
   // Calculate level counts
   const levelCounts = useMemo(() => {
     const counts: Record<string, number> = { All: companies.length };
-    ["1", "2", "3"].forEach((level) => {
+    ["1", "2", "3", "4"].forEach((level) => {
       counts[`Level ${level}`] = companies.filter((c) => c.level === level).length;
     });
     return counts;
-  }, []);
+  }, [companies]);
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
     setActiveLevel(newValue);

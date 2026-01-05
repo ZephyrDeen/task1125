@@ -34,7 +34,6 @@ import SearchIcon from "@mui/icons-material/Search";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import BusinessIcon from "@mui/icons-material/Business";
-import companies from "@/public/company.json";
 
 interface CompanyRow {
   company_code: string;
@@ -49,11 +48,6 @@ interface CompanyRow {
 
 type Order = "asc" | "desc";
 type OrderBy = "company_code" | "company_name" | "level" | "country" | "annual_revenue";
-
-const initialRows: (CompanyRow & { id: string })[] = (companies as CompanyRow[]).map((company) => ({
-  ...company,
-  id: company.company_code,
-}));
 
 // Generate avatar color from name
 function stringToColor(string: string) {
@@ -269,7 +263,7 @@ interface CompanyTableProps {
 }
 
 export default function CompanyTable({ levelFilter = "All" }: CompanyTableProps) {
-  const [rows, setRows] = React.useState(initialRows);
+  const [rows, setRows] = React.useState<(CompanyRow & { id: string })[]>([]);
   const [query, setQuery] = React.useState("");
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(5);
@@ -279,6 +273,20 @@ export default function CompanyTable({ levelFilter = "All" }: CompanyTableProps)
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<string | "selected" | null>(null);
+
+  // Fetch companies from JSON (simulating backend API)
+  React.useEffect(() => {
+    fetch("/companies.json")
+      .then((res) => res.json())
+      .then((data: CompanyRow[]) => {
+        const initialRows = data.map((company) => ({
+          ...company,
+          id: company.company_code,
+        }));
+        setRows(initialRows);
+      })
+      .catch(console.error);
+  }, []);
 
   const filteredRows = React.useMemo(() => {
     return rows.filter((company) => {

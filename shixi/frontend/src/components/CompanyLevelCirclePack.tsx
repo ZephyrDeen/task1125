@@ -61,52 +61,71 @@ async function fetchRelationships(): Promise<Relationship[]> {
 }
 
 // Build hierarchy from filtered companies
+// Shows all children of filtered companies, even if children are not in filter results
 function buildHierarchyFromFiltered(
-  companies: Company[],
+  filteredCompanies: Company[],
+  allCompanies: Company[],
   relations: Relationship[]
 ): HierarchyNode | null {
-  if (companies.length === 0) return null;
+  if (filteredCompanies.length === 0) return null;
+
+  // Create company map from ALL companies (not just filtered)
+  // This allows us to show children that are not in the filter results
+  const allCompanyMap = new Map<string, Company>();
+  allCompanies.forEach((company) => {
+    allCompanyMap.set(company.company_code, company);
+  });
 
   // Create company map from filtered companies
-  const companyMap = new Map<string, Company>();
-  companies.forEach((company) => {
-    companyMap.set(company.company_code, company);
+  const filteredCompanyMap = new Map<string, Company>();
+  filteredCompanies.forEach((company) => {
+    filteredCompanyMap.set(company.company_code, company);
   });
 
   // Get all company codes that are in filtered data
-  const filteredCodes = new Set(companies.map((c) => c.company_code));
+  const filteredCodes = new Set(filteredCompanies.map((c) => c.company_code));
 
-  // Build parent-child relationships only for filtered companies
-  const childrenMap = new Map<string, string[]>();
-  const hasParent = new Set<string>();
-
+  // Build ALL parent-child relationships (not just for filtered companies)
+  // This allows us to show children of filtered companies even if children are not in filter
+  const allChildrenMap = new Map<string, string[]>();
   relations.forEach((rel) => {
     const childCode = rel.company_code;
     const parentCode = rel.parent_company;
 
-    // Only include relationships where both parent and child are in filtered data
-    if (filteredCodes.has(childCode)) {
-      if (parentCode && filteredCodes.has(parentCode)) {
-        if (!childrenMap.has(parentCode)) {
-          childrenMap.set(parentCode, []);
-        }
-        childrenMap.get(parentCode)!.push(childCode);
-        hasParent.add(childCode);
+    if (parentCode) {
+      if (!allChildrenMap.has(parentCode)) {
+        allChildrenMap.set(parentCode, []);
       }
+      allChildrenMap.get(parentCode)!.push(childCode);
     }
   });
 
-  // Find root nodes (companies without parents in filtered set)
-  const rootCodes = companies
-    .filter((c) => !hasParent.has(c.company_code))
+  // Find root nodes (filtered companies that don't have a parent in the filtered set)
+  // But we'll show all their children regardless of whether children are in filter
+  const hasParentInFilter = new Set<string>();
+  filteredCompanies.forEach((company) => {
+    relations.forEach((rel) => {
+      if (rel.company_code === company.company_code && rel.parent_company) {
+        if (filteredCodes.has(rel.parent_company)) {
+          hasParentInFilter.add(company.company_code);
+        }
+      }
+    });
+  });
+
+  const rootCodes = filteredCompanies
+    .filter((c) => !hasParentInFilter.has(c.company_code))
     .map((c) => c.company_code);
 
   // Build node recursively
+  // Shows all children, even if they are not in the filter results
   function buildNode(companyCode: string): HierarchyNode | null {
-    const company = companyMap.get(companyCode);
+    // Get company from all companies map (not just filtered)
+    const company = allCompanyMap.get(companyCode);
     if (!company) return null;
 
-    const children = childrenMap.get(companyCode) || [];
+    // Get all children from relationships (not just filtered children)
+    const children = allChildrenMap.get(companyCode) || [];
 
     if (children.length === 0) {
       return {
@@ -187,14 +206,25 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [hierarchyData, setHierarchyData] = useState<HierarchyNode | null>(null);
+  const [allCompanies, setAllCompanies] = useState<Company[]>([]);
 
-  // Build hierarchy when companies change
+  // Fetch all companies data (needed to show children not in filter results)
+  useEffect(() => {
+    fetch("/companies.json")
+      .then((res) => res.json())
+      .then((data) => setAllCompanies(data))
+      .catch(console.error);
+  }, []);
+
+  // Build hierarchy when companies or allCompanies change
   useEffect(() => {
     async function buildHierarchy() {
+      if (allCompanies.length === 0) return; // Wait for all companies to load
+      
       setLoading(true);
       try {
         const relations = await fetchRelationships();
-        const hierarchy = buildHierarchyFromFiltered(companies, relations);
+        const hierarchy = buildHierarchyFromFiltered(companies, allCompanies, relations);
         setHierarchyData(hierarchy);
       } catch (error) {
         console.error("Failed to build hierarchy:", error);
@@ -204,7 +234,7 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
     }
 
     buildHierarchy();
-  }, [companies]);
+  }, [companies, allCompanies]);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !hierarchyData) return;
@@ -234,6 +264,27 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
 
     const root = pack(hierarchyData);
 
+    // Remove existing tooltip if any
+    d3.selectAll(".company-tooltip").remove();
+
+    // Create tooltip div
+    const tooltip = d3
+      .select("body")
+      .append("div")
+      .attr("class", "company-tooltip")
+      .style("position", "absolute")
+      .style("padding", "8px 12px")
+      .style("background", "rgba(0, 0, 0, 0.85)")
+      .style("color", "#fff")
+      .style("border-radius", "6px")
+      .style("font-size", "13px")
+      .style("font-weight", "500")
+      .style("pointer-events", "none")
+      .style("opacity", 0)
+      .style("z-index", 1000)
+      .style("box-shadow", "0 2px 8px rgba(0, 0, 0, 0.3)")
+      .style("white-space", "nowrap");
+
     // Create the SVG container
     const svg = d3
       .select(svgRef.current)
@@ -259,11 +310,23 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
       .join("circle")
       .attr("fill", (d) => (d.children ? color(d.depth) : "white"))
       .attr("pointer-events", (d) => (!d.children ? "none" : null))
-      .on("mouseover", function () {
-        d3.select(this).attr("stroke", "#000");
+      .on("mouseover", function (event, d) {
+        d3.select(this).attr("stroke", "#000").attr("stroke-width", 2);
+        
+        // Show tooltip with company name only
+        tooltip
+          .html(d.data.name)
+          .style("opacity", 1);
+      })
+      .on("mousemove", function (event) {
+        // Position tooltip near mouse cursor
+        tooltip
+          .style("left", `${event.pageX + 10}px`)
+          .style("top", `${event.pageY - 10}px`);
       })
       .on("mouseout", function () {
-        d3.select(this).attr("stroke", null);
+        d3.select(this).attr("stroke", null).attr("stroke-width", null);
+        tooltip.style("opacity", 0);
       })
       .on("click", (event, d) => {
         if (focus !== d) {
@@ -322,6 +385,11 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
           if (d.parent !== focus) (this as SVGTextElement).style.display = "none";
         });
     }
+
+    // Cleanup function to remove tooltip when component unmounts or data changes
+    return () => {
+      d3.selectAll(".company-tooltip").remove();
+    };
   }, [hierarchyData]);
 
   if (loading) {
