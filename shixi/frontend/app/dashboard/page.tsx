@@ -635,7 +635,7 @@ export default function DashboardPage() {
               </Box>
             )}
             {chartView === "bar" ? (
-              <CompanyBarChart companies={filteredCompanies} dimension={dimension} />
+            <CompanyBarChart companies={filteredCompanies} dimension={dimension} />
             ) : (
               <CompanyLevelCirclePack companies={filteredCompanies} />
             )}

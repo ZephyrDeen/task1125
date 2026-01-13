@@ -60,6 +60,11 @@ async function fetchRelationships(): Promise<Relationship[]> {
   return cachedRelationships;
 }
 
+// Maximum companies to show per group when there's no hierarchy
+const MAX_COMPANIES_PER_GROUP = 20;
+// Maximum total companies to show in flat view
+const MAX_TOTAL_FLAT_COMPANIES = 100;
+
 // Build hierarchy from filtered companies
 // Shows all children of filtered companies, even if children are not in filter results
 function buildHierarchyFromFiltered(
@@ -167,26 +172,16 @@ function buildHierarchyFromFiltered(
     .sort((a, b) => (b.employees || 0) - (a.employees || 0));
 
   if (rootNodes.length === 0) {
-    // No hierarchy found, create flat structure
-    return {
-      name: "Filtered Companies",
-      code: "root",
-      level: 0,
-      country: "",
-      city: "",
-      employees: 0,
-      revenue: 0,
-      children: companies.map((c) => ({
-        name: c.company_name,
-        code: c.company_code,
-        level: parseInt(c.level) || 0,
-        country: c.country,
-        city: c.city,
-        value: c.employees || 1,
-        employees: c.employees,
-        revenue: c.annual_revenue,
-      })),
-    };
+    // No hierarchy found - group by country for better visualization
+    return buildGroupedByCountry(filteredCompanies);
+  }
+
+  // Check if all root nodes have no children (flat structure)
+  const allFlat = rootNodes.every((node) => !node.children || node.children.length === 0);
+
+  if (allFlat && rootNodes.length > MAX_TOTAL_FLAT_COMPANIES) {
+    // Too many flat nodes - group by country for better visualization
+    return buildGroupedByCountry(filteredCompanies);
   }
 
   return {
@@ -197,7 +192,67 @@ function buildHierarchyFromFiltered(
     city: "",
     employees: 0,
     revenue: 0,
-    children: rootNodes,
+    children: rootNodes.slice(0, MAX_TOTAL_FLAT_COMPANIES), // Limit total
+  };
+}
+
+// Build hierarchy grouped by country when there's no natural hierarchy
+function buildGroupedByCountry(companies: Company[]): HierarchyNode {
+  // Group companies by country
+  const countryGroups = new Map<string, Company[]>();
+
+  companies.forEach((company) => {
+    const country = company.country || "Unknown";
+    if (!countryGroups.has(country)) {
+      countryGroups.set(country, []);
+    }
+    countryGroups.get(country)!.push(company);
+  });
+
+  // Sort each group by employees and limit
+  const countryNodes: HierarchyNode[] = [];
+
+  countryGroups.forEach((countryCompanies, country) => {
+    // Sort by employees descending
+    const sorted = countryCompanies.sort((a, b) => (b.employees || 0) - (a.employees || 0));
+    // Take top N companies per country
+    const limited = sorted.slice(0, MAX_COMPANIES_PER_GROUP);
+
+    const totalEmployees = limited.reduce((sum, c) => sum + (c.employees || 0), 0);
+
+    countryNodes.push({
+      name: country,
+      code: `country-${country}`,
+      level: 0,
+      country: country,
+      city: "",
+      employees: totalEmployees,
+      revenue: 0,
+      children: limited.map((c) => ({
+        name: c.company_name,
+        code: c.company_code,
+        level: parseInt(c.level) || 0,
+        country: c.country,
+        city: c.city,
+        value: c.employees || 1,
+        employees: c.employees,
+        revenue: c.annual_revenue,
+      })),
+    });
+  });
+
+  // Sort country nodes by total employees
+  countryNodes.sort((a, b) => (b.employees || 0) - (a.employees || 0));
+
+  return {
+    name: "Companies by Country",
+    code: "root",
+    level: 0,
+    country: "",
+    city: "",
+    employees: 0,
+    revenue: 0,
+    children: countryNodes,
   };
 }
 
@@ -220,7 +275,7 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
   useEffect(() => {
     async function buildHierarchy() {
       if (allCompanies.length === 0) return; // Wait for all companies to load
-      
+
       setLoading(true);
       try {
         const relations = await fetchRelationships();
@@ -312,7 +367,7 @@ export default function CompanyLevelCirclePack({ companies }: Props) {
       .attr("pointer-events", (d) => (!d.children ? "none" : null))
       .on("mouseover", function (event, d) {
         d3.select(this).attr("stroke", "#000").attr("stroke-width", 2);
-        
+
         // Show tooltip with company name only
         tooltip
           .html(d.data.name)

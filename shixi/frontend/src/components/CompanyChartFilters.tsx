@@ -109,14 +109,14 @@ export default function CompanyChartFilters({
       {/* Header */}
       <Stack direction="row" alignItems="center" justifyContent={hideTitleAndCount ? "flex-end" : "space-between"} sx={{ mb: 2 }}>
         {!hideTitleAndCount && (
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ color: "#212B36" }}>
-              Company Distribution
-            </Typography>
-            <Typography variant="body2" sx={{ color: "#637381" }}>
-              By {dimensionLabels[dimension]} • {filteredCount} companies
-            </Typography>
-          </Box>
+        <Box>
+          <Typography variant="h6" fontWeight={700} sx={{ color: "#212B36" }}>
+            Company Distribution
+          </Typography>
+          <Typography variant="body2" sx={{ color: "#637381" }}>
+            By {dimensionLabels[dimension]} • {filteredCount} companies
+          </Typography>
+        </Box>
         )}
 
         <Stack direction="row" spacing={1} alignItems="center">
